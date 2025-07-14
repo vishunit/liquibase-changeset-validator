@@ -19,4 +19,17 @@
         </rollback>
     </changeSet>
 
+    <changeSet id="create_user_table_2" author="example">
+        <createTable tableName="users_2">
+            <column name="id" type="INT">
+                <constraints primaryKey="true"/>
+            </column>
+            <column name="name" type="VARCHAR(100)"/>
+        </createTable>
+
+        <rollback>
+            <dropTable tableName="users_2"/>
+        </rollback>
+    </changeSet>
+
 </databaseChangeLog>

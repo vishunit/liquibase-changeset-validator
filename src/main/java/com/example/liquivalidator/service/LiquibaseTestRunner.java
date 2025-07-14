@@ -3,9 +3,12 @@ package com.example.liquivalidator.service;
 import liquibase.Contexts;
 import liquibase.LabelExpression;
 import liquibase.Liquibase;
+import liquibase.changelog.ChangeSet;
+import liquibase.changelog.DatabaseChangeLog;
 import liquibase.database.Database;
 import liquibase.database.DatabaseFactory;
 import liquibase.database.jvm.JdbcConnection;
+import liquibase.exception.LiquibaseException;
 import liquibase.exception.RollbackImpossibleException;
 import liquibase.resource.ClassLoaderResourceAccessor;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,6 +18,7 @@ import org.springframework.stereotype.Service;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
+import java.util.List;
 
 @Service
 public class LiquibaseTestRunner implements CommandLineRunner {
@@ -39,12 +43,44 @@ public class LiquibaseTestRunner implements CommandLineRunner {
 
             Liquibase liquibase = new Liquibase(changelog, new ClassLoaderResourceAccessor(), database);
 
+            // Get all changesets from the changelog
+            DatabaseChangeLog databaseChangeLog = liquibase.getDatabaseChangeLog();
+            List<ChangeSet> changeSets = databaseChangeLog.getChangeSets();
+
+            // Find the specific changeset we want to run
+            ChangeSet targetChangeSet = changeSets.stream()
+                    .filter(cs -> cs.getId().equals(changeSetId))
+                    .findFirst()
+                    .orElse(null);
+
+            if (targetChangeSet == null) {
+                System.err.println("❌ ChangeSet not found: " + changeSetId);
+                return;
+            }
+
+            // Check if changeset was already executed
+            if (database.getRanChangeSet(targetChangeSet) != null) {
+                System.out.println("ℹ️ ChangeSet already executed: " + changeSetId);
+                return;
+            }
+
             System.out.println("🔍 Applying ChangeSet for validation: " + changeSetId);
-            liquibase.update(new Contexts(), new LabelExpression());
+
+            // Create a new changelog containing only our target changeset
+            DatabaseChangeLog singleChangeLog = new DatabaseChangeLog(databaseChangeLog.getPhysicalFilePath());
+            singleChangeLog.addChangeSet(targetChangeSet);
+
+            // Create a new Liquibase instance with our single changeset
+            Liquibase singleLiquibase = new Liquibase(singleChangeLog,
+                    new ClassLoaderResourceAccessor(), database);
+
+            // Execute ONLY our target changeset
+            singleLiquibase.update(new Contexts(), new LabelExpression());
 
             if (rollbackEnabled) {
                 System.out.println("🌀 Rolling back ChangeSet: " + changeSetId);
-                liquibase.rollback(1, (String) null);
+                // Rollback using the changeset's identification
+                singleLiquibase.rollback(1, new Contexts(), new LabelExpression());
                 System.out.println("✅ Rolled back successfully.");
             } else {
                 System.out.println("✅ ChangeSet executed successfully: " + changeSetId);
